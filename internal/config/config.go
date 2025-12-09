@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-// Config holds all base application configuration settings shared or used by either service.
+// Config holds all base application configuration settings.
 type Config struct {
 	// Server settings (primarily for receiver)
 	Port string
@@ -17,36 +17,37 @@ type Config struct {
 	ServiceBusConnectionString string
 	ServiceBusQueueName      string
     
-    // Forwarder specific settings (loaded separately in forwarder main)
+    // Forwarder specific settings
     TargetToolURL string
     TargetToolAuthToken string
 }
 
 // LoadBaseConfig initializes the configuration from environment variables.
+// Note: It loads all possible variables, and the main function will enforce strict requirements.
 func LoadBaseConfig() *Config {
-	// Load common settings
 	cfg := &Config{
-		Port:                       getEnv("PORT", "8080"),
-		ServiceBusConnectionString: getEnvStrict("AZURE_SERVICE_BUS_CONN_STRING"),
-		ServiceBusQueueName:        getEnvStrict("AZURE_SERVICE_BUS_QUEUE_NAME"),
+		Port:                       GetEnv("PORT", "8080"),
+		ServiceBusConnectionString: GetEnv("AZURE_SERVICE_BUS_CONN_STRING", ""),
+		ServiceBusQueueName:        GetEnv("AZURE_SERVICE_BUS_QUEUE_NAME", ""),
         
-        // These will be loaded by the specific component that needs them
-        GitHubSecret: getEnv("GITHUB_WEBHOOK_SECRET", ""),
-        TargetToolURL: getEnv("TARGET_TOOL_URL", ""),
-        TargetToolAuthToken: getEnv("TARGET_TOOL_AUTH_TOKEN", ""),
+        GitHubSecret:               GetEnv("GITHUB_WEBHOOK_SECRET", ""),
+        TargetToolURL:              GetEnv("TARGET_TOOL_URL", ""),
+        TargetToolAuthToken:        GetEnv("TARGET_TOOL_AUTH_TOKEN", ""),
 	}
-	log.Println("Base configuration loaded successfully.")
+	log.Println("Base configuration loaded.")
 	return cfg
 }
 
-func getEnv(key, fallback string) string {
+// GetEnv retrieves the environment variable or returns the fallback.
+func GetEnv(key, fallback string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value
 	}
 	return fallback
 }
 
-func getEnvStrict(key string) string {
+// GetEnvStrict retrieves the environment variable or terminates the application.
+func GetEnvStrict(key string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value
 	}
