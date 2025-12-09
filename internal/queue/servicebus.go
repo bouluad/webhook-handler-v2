@@ -8,17 +8,17 @@ import (
 	azservicebus "github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
 )
 
-// ServiceBusPublisher manages the connection and publishing.
+// Aliases for clarity
 type ServiceBusPublisher struct {
 	sender *azservicebus.Sender
 }
-
-// ServiceBusConsumer manages the connection and consumption.
 type ServiceBusConsumer struct {
 	receiver *azservicebus.Receiver
 }
+type ReceivedMessage = azservicebus.ReceivedMessage
 
-// NewServiceBusPublisher initializes the Service Bus client and sender.
+// --- PUBLISHER ---
+
 func NewServiceBusPublisher(connString, queueName string) (*ServiceBusPublisher, error) {
 	client, err := azservicebus.NewClientFromConnectionString(connString, nil)
 	if err != nil {
@@ -31,7 +31,6 @@ func NewServiceBusPublisher(connString, queueName string) (*ServiceBusPublisher,
 	return &ServiceBusPublisher{sender: sender}, nil
 }
 
-// Publish sends the raw payload body to the queue.
 func (p *ServiceBusPublisher) Publish(ctx context.Context, payloadBody []byte) error {
 	message := azservicebus.NewMessage(payloadBody)
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -43,12 +42,12 @@ func (p *ServiceBusPublisher) Publish(ctx context.Context, payloadBody []byte) e
 	return nil
 }
 
-// Close gracefully closes the sender connection.
 func (p *ServiceBusPublisher) Close(ctx context.Context) {
 	p.sender.Close(ctx)
 }
 
-// NewServiceBusConsumer initializes the Service Bus client and receiver.
+// --- CONSUMER ---
+
 func NewServiceBusConsumer(connString, queueName string) (*ServiceBusConsumer, error) {
 	client, err := azservicebus.NewClientFromConnectionString(connString, nil)
 	if err != nil {
@@ -61,23 +60,18 @@ func NewServiceBusConsumer(connString, queueName string) (*ServiceBusConsumer, e
 	return &ServiceBusConsumer{receiver: receiver}, nil
 }
 
-// Receive attempts to receive messages.
-func (c *ServiceBusConsumer) Receive(ctx context.Context, maxMessages int, maxWaitTime time.Duration) ([]*azservicebus.ReceivedMessage, error) {
-    // Note: A real-world app might use the ProcessMessages loop for automatic handling.
+func (c *ServiceBusConsumer) Receive(ctx context.Context, maxMessages int, maxWaitTime time.Duration) ([]*ReceivedMessage, error) {
 	return c.receiver.ReceiveMessages(ctx, maxMessages, &azservicebus.ReceiveMessagesOptions{MaxWaitTime: &maxWaitTime})
 }
 
-// Complete marks a message as successfully processed.
-func (c *ServiceBusConsumer) Complete(ctx context.Context, msg *azservicebus.ReceivedMessage) error {
+func (c *ServiceBusConsumer) Complete(ctx context.Context, msg *ReceivedMessage) error {
 	return c.receiver.CompleteMessage(ctx, msg, nil)
 }
 
-// Abandon marks a message for redelivery.
-func (c *ServiceBusConsumer) Abandon(ctx context.Context, msg *azservicebus.ReceivedMessage) error {
+func (c *ServiceBusConsumer) Abandon(ctx context.Context, msg *ReceivedMessage) error {
 	return c.receiver.AbandonMessage(ctx, msg, nil)
 }
 
-// Close gracefully closes the receiver connection.
 func (c *ServiceBusConsumer) Close(ctx context.Context) {
 	c.receiver.Close(ctx)
 }
