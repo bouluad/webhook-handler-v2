@@ -33,7 +33,6 @@ func (c *Client) ForwardPayload(payload []byte) error {
 
 	req.Header.Set("Content-Type", "application/json")
 	
-    // Set a generic authorization header
 	if c.AuthToken != "" {
         req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.AuthToken)) 
     }
