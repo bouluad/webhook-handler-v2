@@ -7,45 +7,22 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-
+    
 	"webhook-handler-project/internal/config"
-	"webhook-handler-project/internal/queue"
 	"webhook-handler-project/internal/forward"
+	"webhook-handler-project/internal/queue"
+    "webhook-handler-project/internal/forwarder"
 )
-
-// ForwarderConfig extends the base config with target tool details
-type ForwarderConfig struct {
-	*config.Config
-}
-
-func loadForwarderConfig() *ForwarderConfig {
-	baseCfg := config.LoadBaseConfig() 
-	
-    // Ensure forwarder-specific envs are present
-    baseCfg.TargetToolURL = getEnvStrict("TARGET_TOOL_URL")
-    baseCfg.TargetToolAuthToken = getEnv("TARGET_TOOL_AUTH_TOKEN", "") // Auth token can be optional
-	
-	return &ForwarderConfig{Config: baseCfg}
-}
-
-func getEnv(key, fallback string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return fallback
-}
-
-func getEnvStrict(key string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	log.Fatalf("Environment variable %s is required and not set.", key)
-	return "" 
-}
 
 func main() {
 	// 1. Load Configuration
-	cfg := loadForwarderConfig()
+	cfg := config.LoadBaseConfig() 
+    
+    // Enforce Forwarder's strict requirements
+    cfg.ServiceBusConnectionString = config.GetEnvStrict("AZURE_SERVICE_BUS_CONN_STRING")
+    cfg.ServiceBusQueueName = config.GetEnvStrict("AZURE_SERVICE_BUS_QUEUE_NAME")
+    cfg.TargetToolURL = config.GetEnvStrict("TARGET_TOOL_URL")
+    cfg.TargetToolAuthToken = config.GetEnv("TARGET_TOOL_AUTH_TOKEN", "") // Auth token is optional
 
 	// 2. Initialize Service Bus Consumer
 	consumer, err := queue.NewServiceBusConsumer(cfg.ServiceBusConnectionString, cfg.ServiceBusQueueName)
@@ -57,11 +34,14 @@ func main() {
 	// 3. Initialize Target Tool Client
 	toolClient := forward.NewClient(cfg.TargetToolURL, cfg.TargetToolAuthToken)
 
-	// 4. Start the message processing loop
+	// 4. Initialize and Run the Consumer
     ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+
+    forwarder := forwarder.NewConsumer(cfg, consumer, toolClient)
     
-    log.Printf("Starting ASB consumer for queue: %s. Target URL: %s", cfg.ServiceBusQueueName, cfg.TargetToolURL)
-	go startConsumerLoop(ctx, consumer, toolClient)
+    // Start the consuming loop
+    go forwarder.Run(ctx) 
 
 	// 5. Graceful Shutdown
 	stop := make(chan os.Signal, 1)
@@ -69,38 +49,10 @@ func main() {
 	<-stop 
 
 	log.Println("Forwarder Shutting down...")
-    cancel() 
-    time.Sleep(5 * time.Second)
+    cancel() // Triggers context cancellation
+    
+    // Give a small moment for the loop to check ctx.Done() and exit
+    time.Sleep(1 * time.Second) 
 
-	log.Println("Forwarder gracefully stopped.")
-}
-
-func startConsumerLoop(ctx context.Context, consumer *queue.ServiceBusConsumer, toolClient *forward.Client) {
-    for {
-        select {
-        case <-ctx.Done():
-            return
-        default:
-            // Receive messages with a timeout
-            messages, err := consumer.Receive(ctx, 1, 10 * time.Second) // Receive 1 message at a time
-            if err != nil {
-                log.Printf("Consumer Error receiving messages: %v", err)
-                time.Sleep(2 * time.Second) 
-                continue
-            }
-            
-            for _, msg := range messages {
-                rawPayload := msg.Body
-                
-                // Process and forward
-                if err := toolClient.ForwardPayload(rawPayload); err != nil {
-                    log.Printf("FORWARDING FAILED for message ID %s: %v. Abandoning message.", msg.MessageID, err)
-                    consumer.Abandon(ctx, msg)
-                } else {
-                    log.Printf("FORWARDING SUCCEEDED for message ID %s. Completing message.", msg.MessageID)
-                    consumer.Complete(ctx, msg)
-                }
-            }
-        }
-    }
+	log.Println("Forwarder application exited.")
 }
